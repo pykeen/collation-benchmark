@@ -32,19 +32,20 @@ from pykeen.utils import resolve_device
 logger = logging.getLogger(__name__)
 
 VERSION = pykeen.get_version()
-GIT_BRANCH = pykeen.get_git_branch()
 
 HERE = pathlib.Path(__file__).resolve().parent
-DEFAULT_DIRECTORY = HERE.joinpath("data", getpass.getuser(), pykeen.get_git_hash())
+DATA = HERE.joinpath("data", getpass.getuser())
+DEFAULT_DIRECTORY = DATA.joinpath(pykeen.get_git_branch(), pykeen.get_git_hash())
 DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 
 @click.command()
 @click.option("--epochs", type=int, default=20, show_default=True)
 @click.option("--dataset")
+@click.option("--top", type=int)
 @verbose_option
 @force_option
-def main(dataset: Optional[str], epochs: int, force: bool) -> None:
+def main(dataset: Optional[str], epochs: int, top: Optional[int], force: bool) -> None:
     """Run the benchmark.
 
     Things to measure:
@@ -61,7 +62,7 @@ def main(dataset: Optional[str], epochs: int, force: bool) -> None:
     dfs = []
     device = resolve_device()
 
-    for dataset_instance in _iterate_datasets(dataset, top=10):
+    for dataset_instance in _iterate_datasets(dataset, top=top):
         with logging_redirect_tqdm():
             df = _generate(
                 dataset=dataset_instance, device=device, epochs=epochs, force=force
@@ -72,7 +73,11 @@ def main(dataset: Optional[str], epochs: int, force: bool) -> None:
         dfs.append(df)
 
     sdf = pd.concat(dfs)
-    _plot(sdf)
+    sdf.to_csv(DEFAULT_DIRECTORY.joinpath("results.tsv.gz"), sep="\t", index=False)
+
+    g = plot(sdf)
+    g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.svg"))
+    g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.png"), dpi=300)
 
 
 COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time"]
@@ -92,7 +97,7 @@ def _keys(dataset: Dataset):
         [None, BloomFilterer],
         num_negs_per_pos_values,
     )
-    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [None])
+    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [0])
     all_keys = (lcwa_keys, slcwa_keys)
     it = tqdm(
         chain.from_iterable(product(*keys) for keys in all_keys),
@@ -194,26 +199,45 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
     return df
 
 
-def _plot(df: pd.DataFrame):
+def _make_label(trainer, sampler, filterer):
+    if trainer == "lcwa":
+        return trainer
+    if not filterer or pd.isnull(filterer) or pd.isna(filterer):
+        filterer = "unfiltered"
+    return f"{trainer}/{sampler}/{filterer}"
+
+
+def _add_label(df, key):
+    df[key] = [
+        _make_label(trainer, sampler, filterer)
+        for trainer, sampler, filterer in df[["trainer", "sampler", "filterer"]].values
+    ]
+
+
+def plot(df: pd.DataFrame, row=None):
+    hue_key = "hue"
+    _add_label(df, hue_key)
+
     g = sns.relplot(
         data=df,
         x="num_negs_per_pos",
         y="time",
-        hue="sampler",
+        hue=hue_key,
         kind="line",
-        row="dataset",
-        col="filterer",
+        col="dataset",
+        row=row,
         height=3.5,
         # ci=100,
         # estimator=numpy.median,
     )
     g.set(
         xscale="log",
+        yscale="log",
         #     xlabel="Batch Size",
         #     ylabel="Seconds Per Batch",
     )
     g.tight_layout()
-    g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.svg"))
+    return g
 
 
 def _iterate_datasets(dataset: Optional[str], top=None) -> Iterable[Dataset]:
