@@ -5,7 +5,7 @@
 import getpass
 import logging
 import pathlib
-from itertools import product
+from itertools import chain, product
 from typing import Iterable, Optional
 
 import click
@@ -13,10 +13,11 @@ import math
 import pandas as pd
 import seaborn as sns
 from docdata import get_docdata
-from more_click import verbose_option
+from more_click import force_option, verbose_option
 from torch.optim import Adam
 from torch.utils.benchmark import Timer
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 import pykeen
 from pykeen import losses
@@ -25,18 +26,16 @@ from pykeen.losses import loss_resolver
 from pykeen.models import model_resolver
 from pykeen.sampling import negative_sampler_resolver
 from pykeen.sampling.filtering import BloomFilterer, filterer_resolver
-from pykeen.training import NonFiniteLossError, SLCWATrainingLoop
+from pykeen.training import LCWATrainingLoop, NonFiniteLossError, SLCWATrainingLoop
 from pykeen.utils import resolve_device
 
 logger = logging.getLogger(__name__)
 
-USER = getpass.getuser()
 VERSION = pykeen.get_version()
-GIT_HASH = pykeen.get_git_hash()
 GIT_BRANCH = pykeen.get_git_branch()
 
 HERE = pathlib.Path(__file__).resolve().parent
-DEFAULT_DIRECTORY = HERE.joinpath("data", USER, GIT_HASH)
+DEFAULT_DIRECTORY = HERE.joinpath("data", getpass.getuser(), pykeen.get_git_hash())
 DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 
@@ -44,7 +43,8 @@ DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 @click.option("--epochs", type=int, default=20, show_default=True)
 @click.option("--dataset")
 @verbose_option
-def main(dataset: Optional[str], epochs: int) -> None:
+@force_option
+def main(dataset: Optional[str], epochs: int, force: bool) -> None:
     """Run the benchmark.
 
     Things to measure:
@@ -61,8 +61,11 @@ def main(dataset: Optional[str], epochs: int) -> None:
     dfs = []
     device = resolve_device()
 
-    for dataset_instance in _iterate_datasets(dataset, top=1):
-        df = _generate(dataset=dataset_instance, device=device, epochs=epochs)
+    for dataset_instance in _iterate_datasets(dataset, top=10):
+        with logging_redirect_tqdm():
+            df = _generate(
+                dataset=dataset_instance, device=device, epochs=epochs, force=force
+            )
         df_columns = df.columns
         df["dataset"] = dataset_instance.get_normalized_name()
         df = df[["dataset", *df_columns]]
@@ -72,7 +75,31 @@ def main(dataset: Optional[str], epochs: int) -> None:
     _plot(sdf)
 
 
-COLUMNS = ["loss", "sampler", "filterer", "num_negs_per_pos", "time"]
+COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time"]
+
+
+def _keys(dataset: Dataset):
+    num_negs_per_pos_values = [10 ** i for i in range(3)]
+    losses_list = [
+        # losses.NSSALoss,
+        losses.SoftplusLoss,
+        # losses.MarginRankingLoss,
+    ]
+    slcwa_keys = (
+        [SLCWATrainingLoop],
+        losses_list,
+        list(negative_sampler_resolver),
+        [None, BloomFilterer],
+        num_negs_per_pos_values,
+    )
+    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [None])
+    all_keys = (lcwa_keys, slcwa_keys)
+    it = tqdm(
+        chain.from_iterable(product(*keys) for keys in all_keys),
+        desc=dataset.get_normalized_name(),
+        total=sum(math.prod(len(k) for k in keys) for keys in all_keys),
+    )
+    return it
 
 
 def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.DataFrame:
@@ -81,23 +108,10 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
         return pd.read_csv(path, sep="\t")
 
     data = []
-    num_negs_per_pos_values = [10 ** i for i in range(3)]
-    keys = (
-        [
-            # losses.NSSALoss,
-            losses.SoftplusLoss,
-            # losses.MarginRankingLoss,
-        ],
-        list(negative_sampler_resolver),
-        [None, BloomFilterer],
-        num_negs_per_pos_values,
-    )
-    it = tqdm(
-        product(*keys),
-        desc=dataset.get_normalized_name(),
-        total=math.prod(len(k) for k in keys),
-    )
+
+    it = _keys(dataset=dataset)
     for i, (
+        loop_cls,
         loss_cls,
         negative_sampler_cls,
         filterer_cls,
@@ -113,36 +127,42 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
         optimizer = Adam(model.parameters())
 
         it.set_postfix(
+            loop=loop_cls.get_normalized_name(),
             loss=loss_resolver.normalize_cls(loss_cls),
-            sampler=negative_sampler_cls.get_normalized_name(),
-            filterer=(
-                filterer_resolver.normalize_cls(filterer_cls)
-                if filterer_cls
-                else "none"
-            ),
+            sampler=negative_sampler_cls and negative_sampler_cls.get_normalized_name(),
+            filterer=filterer_cls and filterer_resolver.normalize_cls(filterer_cls),
             num_negs_per_pos=num_negs_per_pos,
         )
-        negative_sampler = negative_sampler_resolver.make(
-            negative_sampler_cls,
-            triples_factory=dataset.training,
-            num_negs_per_pos=num_negs_per_pos,
-            filterer=filterer_cls,
-        )
-        trainer = SLCWATrainingLoop(
-            model=model,
-            optimizer=optimizer,
-            triples_factory=dataset.training,
-            negative_sampler=negative_sampler,
-            automatic_memory_optimization=False,
-        )
+        if loop_cls is SLCWATrainingLoop:
+            negative_sampler = negative_sampler_resolver.make(
+                negative_sampler_cls,
+                triples_factory=dataset.training,
+                num_negs_per_pos=num_negs_per_pos,
+                filterer=filterer_cls,
+            )
+            trainer = SLCWATrainingLoop(
+                model=model,
+                optimizer=optimizer,
+                triples_factory=dataset.training,
+                negative_sampler=negative_sampler,
+                automatic_memory_optimization=False,
+            )
+        else:
+            trainer = LCWATrainingLoop(
+                model=model,
+                optimizer=optimizer,
+                triples_factory=dataset.training,
+                automatic_memory_optimization=False,
+            )
+
         timer = Timer(
-            stmt="""
-                    trainer.train(
-                        triples_factory=triples_factory, 
-                        num_epochs=num_epochs, 
-                        use_tqdm=False,
-                        batch_size=batch_size,
-                    )
+            stmt="""\
+                trainer.train(
+                    triples_factory=triples_factory, 
+                    num_epochs=num_epochs, 
+                    use_tqdm=False,
+                    batch_size=batch_size,
+                )
                 """,
             globals=dict(
                 trainer=trainer,
@@ -159,13 +179,10 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
 
         data.extend(
             (
+                loop_cls.get_normalized_name(),
                 loss_resolver.normalize_cls(loss_cls),
-                negative_sampler_cls.get_normalized_name(),
-                (
-                    filterer_resolver.normalize_cls(filterer_cls)
-                    if filterer_cls
-                    else "none"
-                ),
+                negative_sampler_cls and negative_sampler_cls.get_normalized_name(),
+                filterer_cls and filterer_resolver.normalize_cls(filterer_cls),
                 num_negs_per_pos,
                 t,
             )
