@@ -38,6 +38,9 @@ DATA = HERE.joinpath("data", getpass.getuser())
 DEFAULT_DIRECTORY = DATA.joinpath(pykeen.get_git_branch(), pykeen.get_git_hash())
 DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
+#: Columns in each dataset-specific file
+COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time"]
+
 
 @click.command()
 @click.option("--epochs", type=int, default=20, show_default=True)
@@ -78,33 +81,6 @@ def main(dataset: Optional[str], epochs: int, top: Optional[int], force: bool) -
     g = plot(sdf)
     g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.svg"))
     g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.png"), dpi=300)
-
-
-COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time"]
-
-
-def _keys(dataset: Dataset):
-    num_negs_per_pos_values = [10 ** i for i in range(3)]
-    losses_list = [
-        # losses.NSSALoss,
-        losses.SoftplusLoss,
-        # losses.MarginRankingLoss,
-    ]
-    slcwa_keys = (
-        [SLCWATrainingLoop],
-        losses_list,
-        list(negative_sampler_resolver),
-        [None, BloomFilterer],
-        num_negs_per_pos_values,
-    )
-    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [0])
-    all_keys = (lcwa_keys, slcwa_keys)
-    it = tqdm(
-        chain.from_iterable(product(*keys) for keys in all_keys),
-        desc=dataset.get_normalized_name(),
-        total=sum(math.prod(len(k) for k in keys) for keys in all_keys),
-    )
-    return it
 
 
 def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.DataFrame:
@@ -197,6 +173,30 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
     df = pd.DataFrame(data, columns=COLUMNS)
     df.to_csv(path, sep="\t", index=False)
     return df
+
+
+def _keys(dataset: Dataset):
+    num_negs_per_pos_values = [10 ** i for i in range(3)]
+    losses_list = [
+        # losses.NSSALoss,
+        losses.SoftplusLoss,
+        # losses.MarginRankingLoss,
+    ]
+    slcwa_keys = (
+        [SLCWATrainingLoop],
+        losses_list,
+        list(negative_sampler_resolver),
+        [None, BloomFilterer],
+        num_negs_per_pos_values,
+    )
+    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [0])
+    all_keys = (lcwa_keys, slcwa_keys)
+    it = tqdm(
+        chain.from_iterable(product(*keys) for keys in all_keys),
+        desc=dataset.get_normalized_name(),
+        total=sum(math.prod(len(k) for k in keys) for keys in all_keys),
+    )
+    return it
 
 
 def _make_label(trainer, sampler, filterer):
