@@ -8,7 +8,7 @@ from main import DATA, plot
 
 def _get_latest(directory: str) -> pathlib.Path:
     d = DATA.joinpath(directory)
-    return list(d.iterdir())[0]
+    return next((sd for sd in d.iterdir() if sd.is_dir()))
 
 
 MASTER_BRANCH = "master"
