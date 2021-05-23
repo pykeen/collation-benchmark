@@ -13,4 +13,5 @@ $ python main.py
 
 ## Results
 
-TBD
+![Comparison](data/cthoyt/comparison.svg)
+
