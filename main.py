@@ -39,11 +39,11 @@ DEFAULT_DIRECTORY = DATA.joinpath(pykeen.get_git_branch(), pykeen.get_git_hash()
 DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 #: Columns in each dataset-specific file
-COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time"]
+COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time", "frequency"]
 
 
 @click.command()
-@click.option("--epochs", type=int, default=20, show_default=True)
+@click.option("--epochs", type=int, default=3, show_default=True)
 @click.option("--dataset")
 @click.option("--top", type=int)
 @verbose_option
@@ -166,6 +166,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
                 filterer_cls and filterer_resolver.normalize_cls(filterer_cls),
                 num_negs_per_pos,
                 t,
+                epochs / t,
             )
             for t in measurement.raw_times
         )
