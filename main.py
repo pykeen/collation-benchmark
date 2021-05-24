@@ -40,16 +40,28 @@ DEFAULT_DIRECTORY = DATA.joinpath(pykeen.get_git_branch(), pykeen.get_git_hash()
 DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 #: Columns in each dataset-specific file
-COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "workers", "time", "frequency"]
+COLUMNS = [
+    "trainer",
+    "loss",
+    "sampler",
+    "filterer",
+    "num_negs_per_pos",
+    "workers",
+    "epochs",
+    "time",
+    "frequency",
+]
 
 
 @click.command()
-@click.option("--epochs", type=int, default=3, show_default=True)
+@click.option("--num-epochs", type=int, default=3, show_default=True)
 @click.option("--dataset")
 @click.option("--top", type=int, default=2)
 @verbose_option
 @force_option
-def main(dataset: Optional[str], epochs: int, top: Optional[int], force: bool) -> None:
+def main(
+    dataset: Optional[str], num_epochs: int, top: Optional[int], force: bool
+) -> None:
     """Run the benchmark.
 
     Things to measure:
@@ -69,7 +81,10 @@ def main(dataset: Optional[str], epochs: int, top: Optional[int], force: bool) -
     for dataset_instance in _iterate_datasets(dataset, top=top):
         with logging_redirect_tqdm():
             df = _generate(
-                dataset=dataset_instance, device=device, epochs=epochs, force=force
+                dataset=dataset_instance,
+                device=device,
+                num_epochs=num_epochs,
+                force=force,
             )
         df_columns = df.columns
         df["dataset"] = dataset_instance.get_normalized_name()
@@ -84,7 +99,9 @@ def main(dataset: Optional[str], epochs: int, top: Optional[int], force: bool) -
     g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.png"), dpi=300)
 
 
-def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.DataFrame:
+def _generate(
+    *, dataset: Dataset, num_epochs: int, device, force: bool = False
+) -> pd.DataFrame:
     path = DEFAULT_DIRECTORY.joinpath(dataset.get_normalized_name()).with_suffix(".tsv")
     if path.is_file() and not force:
         return pd.read_csv(path, sep="\t")
@@ -150,7 +167,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
             globals=dict(
                 trainer=trainer,
                 triples_factory=dataset.training,
-                num_epochs=epochs,
+                num_epochs=num_epochs,
                 batch_size=512,
                 num_workers=num_workers,
             ),
@@ -165,12 +182,21 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
             (
                 loop_cls.get_normalized_name(),
                 loss_resolver.normalize_cls(loss_cls),
-                negative_sampler_cls.get_normalized_name() if negative_sampler_cls else 'none',
-                filterer_resolver.normalize_cls(filterer_cls) if filterer_cls else 'none',
+                (
+                    negative_sampler_cls.get_normalized_name()
+                    if negative_sampler_cls
+                    else "none"
+                ),
+                (
+                    filterer_resolver.normalize_cls(filterer_cls)
+                    if filterer_cls
+                    else "none"
+                ),
                 num_negs_per_pos,
                 num_workers,
+                num_epochs,
                 t,
-                epochs / t,
+                num_epochs / t,
             )
             for t in measurement.raw_times
         )
