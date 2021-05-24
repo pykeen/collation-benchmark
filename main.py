@@ -6,6 +6,7 @@ import getpass
 import logging
 import pathlib
 from itertools import chain, product
+from multiprocessing import cpu_count
 from typing import Iterable, Optional
 
 import click
@@ -39,7 +40,7 @@ DEFAULT_DIRECTORY = DATA.joinpath(pykeen.get_git_branch(), pykeen.get_git_hash()
 DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 #: Columns in each dataset-specific file
-COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time", "frequency"]
+COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "workers", "time", "frequency"]
 
 
 @click.command()
@@ -97,6 +98,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
         negative_sampler_cls,
         filterer_cls,
         num_negs_per_pos,
+        num_workers,
     ) in enumerate(it):
         model = model_resolver.make(
             "TransE",
@@ -150,7 +152,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
                 triples_factory=dataset.training,
                 num_epochs=epochs,
                 batch_size=512,
-                num_workers=0,  # TODO: Vary num_workers for sampling in dataloader
+                num_workers=num_workers,
             ),
         )
         try:
@@ -166,6 +168,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
                 negative_sampler_cls.get_normalized_name() if negative_sampler_cls else 'none',
                 filterer_resolver.normalize_cls(filterer_cls) if filterer_cls else 'none',
                 num_negs_per_pos,
+                num_workers,
                 t,
                 epochs / t,
             )
@@ -178,6 +181,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
 
 
 def _keys(dataset: Dataset):
+    workers = [0, cpu_count()]
     num_negs_per_pos_values = [10 ** i for i in range(3)]
     losses_list = [
         # losses.NSSALoss,
@@ -190,8 +194,9 @@ def _keys(dataset: Dataset):
         list(negative_sampler_resolver),
         [None, BloomFilterer],
         num_negs_per_pos_values,
+        workers,
     )
-    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [0])
+    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [0], workers)
     all_keys = (lcwa_keys, slcwa_keys)
     it = tqdm(
         chain.from_iterable(product(*keys) for keys in all_keys),
