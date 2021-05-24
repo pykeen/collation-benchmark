@@ -135,7 +135,6 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
                 triples_factory=dataset.training,
                 automatic_memory_optimization=False,
             )
-
         timer = Timer(
             stmt="""\
                 trainer.train(
@@ -143,6 +142,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
                     num_epochs=num_epochs, 
                     use_tqdm=False,
                     batch_size=batch_size,
+                    num_workers=num_workers,
                 )
                 """,
             globals=dict(
@@ -150,6 +150,7 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
                 triples_factory=dataset.training,
                 num_epochs=epochs,
                 batch_size=512,
+                num_workers=0,  # TODO: Vary num_workers for sampling in dataloader
             ),
         )
         try:
