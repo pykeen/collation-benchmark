@@ -2,8 +2,9 @@ import pathlib
 
 import click
 import pandas as pd
+import seaborn as sns
 
-from main import DATA, plot
+from main import DATA
 
 
 def _get_latest(directory: str) -> pathlib.Path:
@@ -32,7 +33,33 @@ def main(master: pathlib.Path, new: pathlib.Path):
     right_df[branch_key] = NEW_BRANCH
     df = pd.concat([left_df, right_df])
 
-    g = plot(df, row=branch_key)
+    group_key = "row"
+    df[group_key] = [
+        f'{sampler or ""}/{filterer or ""}'
+        for sampler, filterer in df[["sampler", "filterer"]].values
+    ]
+    g = sns.relplot(
+        data=df[df.trainer == 'slcwa'],
+        x="num_negs_per_pos",
+        y="frequency",
+        hue=branch_key,
+        kind="line",
+        col="dataset",
+        height=3,
+        row=group_key,
+        markers=True,
+        aspect=1.3,
+        # ci=100,
+        # estimator=numpy.median,
+    )
+    g.set(
+        xscale="log",
+        yscale="log",
+        #     xlabel="Batch Size",
+        ylabel="Epochs per Second",
+    )
+    g.set_titles("{col_name}: {row_name}")
+    g.tight_layout()
     g.fig.savefig(DATA.joinpath("comparison.svg"))
     g.fig.savefig(DATA.joinpath("comparison.png"), dpi=300)
 

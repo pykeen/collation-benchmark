@@ -45,7 +45,7 @@ COLUMNS = ["trainer", "loss", "sampler", "filterer", "num_negs_per_pos", "time",
 @click.command()
 @click.option("--epochs", type=int, default=3, show_default=True)
 @click.option("--dataset")
-@click.option("--top", type=int)
+@click.option("--top", type=int, default=2)
 @verbose_option
 @force_option
 def main(dataset: Optional[str], epochs: int, top: Optional[int], force: bool) -> None:
@@ -162,8 +162,8 @@ def _generate(*, dataset: Dataset, epochs, device, force: bool = False) -> pd.Da
             (
                 loop_cls.get_normalized_name(),
                 loss_resolver.normalize_cls(loss_cls),
-                negative_sampler_cls and negative_sampler_cls.get_normalized_name(),
-                filterer_cls and filterer_resolver.normalize_cls(filterer_cls),
+                negative_sampler_cls.get_normalized_name() if negative_sampler_cls else 'none',
+                filterer_resolver.normalize_cls(filterer_cls) if filterer_cls else 'none',
                 num_negs_per_pos,
                 t,
                 epochs / t,
@@ -208,7 +208,7 @@ def _make_label(trainer, sampler, filterer):
     return f"{trainer}/{sampler}/{filterer}"
 
 
-def _add_label(df, key):
+def add_group_label(df, key):
     df[key] = [
         _make_label(trainer, sampler, filterer)
         for trainer, sampler, filterer in df[["trainer", "sampler", "filterer"]].values
@@ -217,12 +217,12 @@ def _add_label(df, key):
 
 def plot(df: pd.DataFrame, row=None):
     hue_key = "hue"
-    _add_label(df, hue_key)
+    add_group_label(df, hue_key)
 
     g = sns.relplot(
         data=df,
         x="num_negs_per_pos",
-        y="time",
+        y="frequency",
         hue=hue_key,
         kind="line",
         col="dataset",
@@ -235,7 +235,7 @@ def plot(df: pd.DataFrame, row=None):
         xscale="log",
         yscale="log",
         #     xlabel="Batch Size",
-        #     ylabel="Seconds Per Batch",
+        ylabel="Epochs per Second",
     )
     g.tight_layout()
     return g
