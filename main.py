@@ -21,8 +21,7 @@ from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 import pykeen
-from pykeen import losses
-from pykeen.datasets import Dataset, datasets as dataset_dict, get_dataset
+from pykeen.datasets import Dataset, dataset_resolver, get_dataset
 from pykeen.losses import loss_resolver
 from pykeen.models import model_resolver
 from pykeen.sampling import negative_sampler_resolver
@@ -42,7 +41,6 @@ DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 #: Columns in each dataset-specific file
 COLUMNS = [
     "trainer",
-    "loss",
     "sampler",
     "filterer",
     "num_negs_per_pos",
@@ -108,30 +106,31 @@ def _generate(
 
     data = []
 
+    loss = loss_resolver.make('marginranking')
+
     it = _keys(dataset=dataset)
     for i, (
         loop_cls,
-        loss_cls,
         negative_sampler_cls,
         filterer_cls,
         num_negs_per_pos,
         num_workers,
     ) in enumerate(it):
         model = model_resolver.make(
-            "TransE",
+            'distmult',
             triples_factory=dataset.training,
-            preferred_device=device,
             random_seed=i,
-            loss=loss_resolver.make(loss_cls),
-        )
+            loss=loss,
+        ).to(device)
         optimizer = Adam(model.parameters())
 
         it.set_postfix(
             loop=loop_cls.get_normalized_name(),
-            loss=loss_resolver.normalize_cls(loss_cls),
+            loss=loss_resolver.normalize_inst(loss),
             sampler=negative_sampler_cls and negative_sampler_cls.get_normalized_name(),
             filterer=filterer_cls and filterer_resolver.normalize_cls(filterer_cls),
             num_negs_per_pos=num_negs_per_pos,
+            num_workers=num_workers,
         )
         if loop_cls is SLCWATrainingLoop:
             negative_sampler = negative_sampler_resolver.make(
@@ -181,7 +180,7 @@ def _generate(
         data.extend(
             (
                 loop_cls.get_normalized_name(),
-                loss_resolver.normalize_cls(loss_cls),
+                loss_resolver.normalize_inst(loss),
                 (
                     negative_sampler_cls.get_normalized_name()
                     if negative_sampler_cls
@@ -208,21 +207,15 @@ def _generate(
 
 def _keys(dataset: Dataset):
     workers = [0, cpu_count()]
-    num_negs_per_pos_values = [10 ** i for i in range(3)]
-    losses_list = [
-        # losses.NSSALoss,
-        losses.SoftplusLoss,
-        # losses.MarginRankingLoss,
-    ]
+    num_negs_per_pos_values = [10 ** i for i in range(2)]  # just 1 and 10 for now
     slcwa_keys = (
         [SLCWATrainingLoop],
-        losses_list,
         list(negative_sampler_resolver),
         [None, BloomFilterer],
         num_negs_per_pos_values,
         workers,
     )
-    lcwa_keys = ([LCWATrainingLoop], losses_list, [None], [None], [0], workers)
+    lcwa_keys = ([LCWATrainingLoop], [None], [None], [0], workers)
     all_keys = (lcwa_keys, slcwa_keys)
     it = tqdm(
         chain.from_iterable(product(*keys) for keys in all_keys),
@@ -277,7 +270,7 @@ def _iterate_datasets(dataset: Optional[str], top=None) -> Iterable[Dataset]:
     if dataset:
         _dataset_list = [dataset]
     else:
-        _dataset_list = sorted(dataset_dict, key=_triples)
+        _dataset_list = sorted(dataset_resolver.lookup_dict, key=_triples)
     if top:
         _dataset_list = _dataset_list[:top]
     it = tqdm(_dataset_list, desc="Dataset")
@@ -287,7 +280,7 @@ def _iterate_datasets(dataset: Optional[str], top=None) -> Iterable[Dataset]:
 
 
 def _triples(d: str) -> int:
-    return get_docdata(dataset_dict[d])["statistics"]["triples"]
+    return get_docdata(dataset_resolver.lookup_dict[d])["statistics"]["triples"]
 
 
 if __name__ == "__main__":

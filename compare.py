@@ -33,8 +33,8 @@ def main(master: pathlib.Path, new: pathlib.Path):
     right_df[branch_key] = NEW_BRANCH
     df = pd.concat([left_df, right_df])
 
-    group_key = "row"
-    df[group_key] = [
+    row_key = "row"
+    df[row_key] = [
         f'{sampler or ""}/{filterer or ""}'
         for sampler, filterer in df[["sampler", "filterer"]].values
     ]
@@ -42,11 +42,13 @@ def main(master: pathlib.Path, new: pathlib.Path):
         data=df[df.trainer == 'slcwa'],
         x="num_negs_per_pos",
         y="frequency",
-        hue=branch_key,
-        kind="line",
+        hue='workers',
+        style=branch_key,
         col="dataset",
+        row=row_key,
+        # Plot information
+        kind="line",
         height=3,
-        row=group_key,
         markers=True,
         aspect=1.3,
         # ci=100,
