@@ -133,11 +133,20 @@ def _generate(
             num_workers=num_workers,
         )
         if loop_cls is SLCWATrainingLoop:
+            kwargs = dict()
+            if "triples_factory" in negative_sampler_resolver.signature(negative_sampler_cls).parameters:
+                kwargs["triples_factory"]=dataset.training
+            else:
+                kwargs.update(
+                    mapped_triples=dataset.training.mapped_triples,
+                    num_entities=dataset.num_entities,
+                    num_relations=dataset.num_relations,
+                )
             negative_sampler = negative_sampler_resolver.make(
                 negative_sampler_cls,
-                triples_factory=dataset.training,
                 num_negs_per_pos=num_negs_per_pos,
                 filterer=filterer_cls,
+                **kwargs,
             )
             trainer = SLCWATrainingLoop(
                 model=model,
