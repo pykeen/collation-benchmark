@@ -41,6 +41,7 @@ DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 #: Columns in each dataset-specific file
 COLUMNS = [
     "trainer",
+    "loss",
     "sampler",
     "filterer",
     "num_negs_per_pos",
