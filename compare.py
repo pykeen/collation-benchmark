@@ -31,7 +31,7 @@ def main(master: pathlib.Path, new: pathlib.Path):
     left_df[branch_key] = MASTER_BRANCH
     right_df = pd.read_csv(DATA.joinpath(NEW_BRANCH, new, "results.tsv.gz"), sep="\t")
     right_df[branch_key] = NEW_BRANCH
-    df = pd.concat([left_df, right_df])
+    df = pd.concat([left_df, right_df], ignore_index=True)
 
     row_key = "row"
     df[row_key] = [
