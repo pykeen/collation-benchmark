@@ -106,7 +106,7 @@ def _generate(
 
     data = []
 
-    loss = loss_resolver.make('marginranking')
+    loss = loss_resolver.make("marginranking")
 
     it = _keys(dataset=dataset)
     for i, (
@@ -117,7 +117,7 @@ def _generate(
         num_workers,
     ) in enumerate(it):
         model = model_resolver.make(
-            'distmult',
+            "distmult",
             triples_factory=dataset.training,
             random_seed=i,
             loss=loss,
@@ -133,15 +133,17 @@ def _generate(
             num_workers=num_workers,
         )
         if loop_cls is SLCWATrainingLoop:
-            kwargs = dict()
-            if "triples_factory" in negative_sampler_resolver.signature(negative_sampler_cls).parameters:
-                kwargs["triples_factory"]=dataset.training
-            else:
-                kwargs.update(
+            if (
+                "mapped_triples"
+                in negative_sampler_resolver.signature(negative_sampler_cls).parameters
+            ):
+                kwargs = dict(
                     mapped_triples=dataset.training.mapped_triples,
                     num_entities=dataset.num_entities,
                     num_relations=dataset.num_relations,
                 )
+            else:
+                kwargs = dict(triples_factory=dataset.training)
             negative_sampler = negative_sampler_resolver.make(
                 negative_sampler_cls,
                 num_negs_per_pos=num_negs_per_pos,
@@ -216,7 +218,7 @@ def _generate(
 
 def _keys(dataset: Dataset):
     workers = [0, cpu_count()]
-    num_negs_per_pos_values = [10 ** i for i in range(2)]  # just 1 and 10 for now
+    num_negs_per_pos_values = [10**i for i in range(2)]  # just 1 and 10 for now
     slcwa_keys = (
         [SLCWATrainingLoop],
         list(negative_sampler_resolver),
