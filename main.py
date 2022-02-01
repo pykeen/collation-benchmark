@@ -3,6 +3,7 @@
 """Main script."""
 
 import getpass
+import inspect
 import logging
 import pathlib
 from itertools import chain, product
@@ -24,7 +25,7 @@ import pykeen
 from pykeen.datasets import Dataset, dataset_resolver, get_dataset
 from pykeen.losses import loss_resolver
 from pykeen.models import model_resolver
-from pykeen.sampling import negative_sampler_resolver
+from pykeen.sampling import negative_sampler_resolver, NegativeSampler
 from pykeen.sampling.filtering import BloomFilterer, filterer_resolver
 from pykeen.training import LCWATrainingLoop, NonFiniteLossError, SLCWATrainingLoop
 from pykeen.utils import resolve_device
@@ -134,9 +135,10 @@ def _generate(
             num_workers=num_workers,
         )
         if loop_cls is SLCWATrainingLoop:
-            if (
-                "mapped_triples"
-                in negative_sampler_resolver.signature(negative_sampler_cls).parameters
+            if any(
+                "mapped_triples" in negative_sampler_resolver.signature(cls).parameters
+                for cls in inspect.getmro(negative_sampler_cls)
+                if issubclass(cls, NegativeSampler)
             ):
                 kwargs = dict(
                     mapped_triples=dataset.training.mapped_triples,
