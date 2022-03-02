@@ -30,6 +30,6 @@ pip install git+https://github.com/pykeen/pykeen.git@negative-sampling-in-data-l
 python main.py --top 4 --branch-name negative-sampling-in-data-loader
 
 # compare
-python compare.py
+# python compare.py
 #git commit --all -m "Ran benchmark"
 #git push
