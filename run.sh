@@ -6,6 +6,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 
+TOP=4
+
 # create virtual env
 python3 -m venv /tmp/venv/pykeen
 source /tmp/venv/pykeen/bin/activate
@@ -23,11 +25,11 @@ pip install -r requirements.txt
 
 # master
 pip install git+https://github.com/pykeen/pykeen.git@master
-python main.py --top 4 --branch-name master
+python main.py --top ${TOP} --branch-name master
 
 # branch
 pip install git+https://github.com/pykeen/pykeen.git@negative-sampling-in-data-loader
-python main.py --top 4 --branch-name negative-sampling-in-data-loader
+python main.py --top ${TOP} --branch-name negative-sampling-in-data-loader
 
 # compare
 # python compare.py
