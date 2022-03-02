@@ -235,12 +235,13 @@ def _generate(
 
 
 def _keys(dataset: Dataset):
-    workers = [0, cpu_count()]
+    workers = [0, 2, 8]
     num_negs_per_pos_values = [10 ** i for i in range(2)]  # just 1 and 10 for now
     slcwa_keys = (
         [SLCWATrainingLoop],
         list(negative_sampler_resolver),
-        [None, BloomFilterer],
+        # [None, BloomFilterer],
+        [None],
         num_negs_per_pos_values,
         workers,
     )
