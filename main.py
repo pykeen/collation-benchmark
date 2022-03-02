@@ -8,22 +8,25 @@ import logging
 import math
 import pathlib
 from itertools import chain, product
-from multiprocessing import cpu_count
-from typing import Iterable, Optional
+from typing import Iterable, List, Optional, Type
 
 import click
 import pandas as pd
 import pykeen
 import seaborn as sns
+import torch.cuda
 from docdata import get_docdata
 from more_click import force_option, verbose_option
 from pykeen.datasets import Dataset, dataset_resolver, get_dataset
 from pykeen.losses import loss_resolver
 from pykeen.models import model_resolver
-from pykeen.sampling import NegativeSampler, negative_sampler_resolver
-from pykeen.sampling.filtering import BloomFilterer, filterer_resolver
-from pykeen.training import (LCWATrainingLoop, NonFiniteLossError,
-                             SLCWATrainingLoop)
+from pykeen.sampling import (
+    NegativeSampler,
+    PseudoTypedNegativeSampler,
+    negative_sampler_resolver,
+)
+from pykeen.sampling.filtering import BloomFilterer, Filterer, filterer_resolver
+from pykeen.training import LCWATrainingLoop, NonFiniteLossError, SLCWATrainingLoop
 from pykeen.utils import resolve_device
 from torch.optim import Adam
 from torch.utils.benchmark import Timer
@@ -234,14 +237,28 @@ def _generate(
     return df
 
 
+def _get_filterer() -> List[Optional[Type[Filterer]]]:
+    # bloom filter fails on GPU
+    if torch.cuda.is_available():
+        return [None]
+    return [None, BloomFilterer]
+
+
+def _get_samplers() -> List[NegativeSampler]:
+    # pseudo-type sampler fails on GPU
+    res = list(negative_sampler_resolver)
+    if torch.cuda.is_available():
+        res.remove(PseudoTypedNegativeSampler)
+    return res
+
+
 def _keys(dataset: Dataset):
     workers = [0, 2, 8]
     num_negs_per_pos_values = [10 ** i for i in range(2)]  # just 1 and 10 for now
     slcwa_keys = (
         [SLCWATrainingLoop],
-        list(negative_sampler_resolver),
-        # [None, BloomFilterer],
-        [None],
+        _get_samplers(),
+        _get_filterer(),
         num_negs_per_pos_values,
         workers,
     )
