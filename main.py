@@ -323,7 +323,11 @@ def _iterate_datasets(dataset: Optional[str], top=None) -> Iterable[Dataset]:
     it = tqdm(_dataset_list, desc="Dataset")
     for dataset in it:
         it.set_postfix(dataset=dataset)
-        yield get_dataset(dataset=dataset)
+        try:
+            yield get_dataset(dataset=dataset)
+        except ValueError as error:  # CN3l raises ValueError:
+            logger.error(f"Could not load {dataset} due to {error}")
+            continue
 
 
 def _triples(d: str) -> int:
