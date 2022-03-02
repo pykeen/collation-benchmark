@@ -18,6 +18,9 @@ pip install -U pip setuptools wheel
 # CUDA 11.3
 pip install torch==1.10.2+cu113 torchvision==0.11.3+cu113 torchaudio==0.10.2+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
 
+# install this repo's requirements
+pip install -r requirements.txt
+
 # master
 pip install git+https://github.com/pykeen/pykeen.git@master
 python main.py --top 4
