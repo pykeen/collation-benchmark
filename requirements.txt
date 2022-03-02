@@ -1,0 +1,7 @@
+click
+pandas
+seaborn
+# pykeen
+docdata
+torch
+tqdm
