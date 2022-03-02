@@ -23,11 +23,11 @@ pip install -r requirements.txt
 
 # master
 pip install git+https://github.com/pykeen/pykeen.git@master
-python main.py --top 4
+python main.py --top 4 --branch-name master
 
 # branch
 pip install git+https://github.com/pykeen/pykeen.git@negative-sampling-in-data-loader
-python main.py --top 4
+python main.py --top 4 --branch-name negative-sampling-in-data-loader
 
 # compare
 python compare.py
