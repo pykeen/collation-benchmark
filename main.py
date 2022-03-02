@@ -5,30 +5,30 @@
 import getpass
 import inspect
 import logging
+import math
 import pathlib
 from itertools import chain, product
 from multiprocessing import cpu_count
 from typing import Iterable, Optional
 
 import click
-import math
 import pandas as pd
+import pykeen
 import seaborn as sns
 from docdata import get_docdata
 from more_click import force_option, verbose_option
+from pykeen.datasets import Dataset, dataset_resolver, get_dataset
+from pykeen.losses import loss_resolver
+from pykeen.models import model_resolver
+from pykeen.sampling import NegativeSampler, negative_sampler_resolver
+from pykeen.sampling.filtering import BloomFilterer, filterer_resolver
+from pykeen.training import (LCWATrainingLoop, NonFiniteLossError,
+                             SLCWATrainingLoop)
+from pykeen.utils import resolve_device
 from torch.optim import Adam
 from torch.utils.benchmark import Timer
 from tqdm import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
-
-import pykeen
-from pykeen.datasets import Dataset, dataset_resolver, get_dataset
-from pykeen.losses import loss_resolver
-from pykeen.models import model_resolver
-from pykeen.sampling import negative_sampler_resolver, NegativeSampler
-from pykeen.sampling.filtering import BloomFilterer, filterer_resolver
-from pykeen.training import LCWATrainingLoop, NonFiniteLossError, SLCWATrainingLoop
-from pykeen.utils import resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,6 @@ VERSION = pykeen.get_version()
 
 HERE = pathlib.Path(__file__).resolve().parent
 DATA = HERE.joinpath("data", getpass.getuser())
-DEFAULT_DIRECTORY = DATA.joinpath(pykeen.get_git_branch(), pykeen.get_git_hash())
-DEFAULT_DIRECTORY.mkdir(exist_ok=True, parents=True)
 
 #: Columns in each dataset-specific file
 COLUMNS = [
@@ -59,8 +57,13 @@ COLUMNS = [
 @click.option("--top", type=int, default=2)
 @verbose_option
 @force_option
+@click.option("-b", "--branch-name", type=str, default=None)
 def main(
-    dataset: Optional[str], num_epochs: int, top: Optional[int], force: bool
+    dataset: Optional[str],
+    num_epochs: int,
+    top: Optional[int],
+    force: bool,
+    branch_name: str,
 ) -> None:
     """Run the benchmark.
 
@@ -78,6 +81,12 @@ def main(
     dfs = []
     device = resolve_device()
 
+    # branch_name
+    output_directory = DATA.joinpath(
+        branch_name or pykeen.get_git_branch(), pykeen.get_git_hash()
+    )
+    output_directory.mkdir(exist_ok=True, parents=True)
+
     for dataset_instance in _iterate_datasets(dataset, top=top):
         with logging_redirect_tqdm():
             df = _generate(
@@ -85,6 +94,7 @@ def main(
                 device=device,
                 num_epochs=num_epochs,
                 force=force,
+                output_directory=output_directory,
             )
         df_columns = df.columns
         df["dataset"] = dataset_instance.get_normalized_name()
@@ -92,17 +102,22 @@ def main(
         dfs.append(df)
 
     sdf = pd.concat(dfs)
-    sdf.to_csv(DEFAULT_DIRECTORY.joinpath("results.tsv.gz"), sep="\t", index=False)
+    sdf.to_csv(output_directory.joinpath("results.tsv.gz"), sep="\t", index=False)
 
     g = plot(sdf)
-    g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.svg"))
-    g.fig.savefig(DEFAULT_DIRECTORY.joinpath("output.png"), dpi=300)
+    g.fig.savefig(output_directory.joinpath("output.svg"))
+    g.fig.savefig(output_directory.joinpath("output.png"), dpi=300)
 
 
 def _generate(
-    *, dataset: Dataset, num_epochs: int, device, force: bool = False
+    *,
+    dataset: Dataset,
+    num_epochs: int,
+    device,
+    force: bool = False,
+    output_directory: pathlib.Path,
 ) -> pd.DataFrame:
-    path = DEFAULT_DIRECTORY.joinpath(dataset.get_normalized_name()).with_suffix(".tsv")
+    path = output_directory.joinpath(dataset.get_normalized_name()).with_suffix(".tsv")
     if path.is_file() and not force:
         return pd.read_csv(path, sep="\t")
 
@@ -221,7 +236,7 @@ def _generate(
 
 def _keys(dataset: Dataset):
     workers = [0, cpu_count()]
-    num_negs_per_pos_values = [10**i for i in range(2)]  # just 1 and 10 for now
+    num_negs_per_pos_values = [10 ** i for i in range(2)]  # just 1 and 10 for now
     slcwa_keys = (
         [SLCWATrainingLoop],
         list(negative_sampler_resolver),
