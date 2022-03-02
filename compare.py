@@ -1,10 +1,12 @@
+import getpass
 import pathlib
 
 import click
 import pandas as pd
 import seaborn as sns
 
-from main import DATA
+HERE = pathlib.Path(__file__).resolve().parent
+DATA = HERE.joinpath("data", getpass.getuser())
 
 
 def _get_latest(directory: str) -> pathlib.Path:
