@@ -13,5 +13,4 @@ $ python main.py
 
 ## Results
 
-![Comparison](data/cthoyt/comparison.svg)
-
+![Comparison](data/berrendorf/comparison.svg)
